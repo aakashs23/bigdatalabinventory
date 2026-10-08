@@ -22,7 +22,14 @@ cp .env.example .env                              # once; .env is gitignored
 docker compose up -d                              # start mongo + neo4j (no volumes: data is lost on `down`)
 cd backend && source venv/bin/activate            # Python 3.9 venv (gitignored)
 pip install -r requirements.txt
+python seed.py                                    # wipe + reload both databases
+uvicorn main:app --reload                         # then open http://127.0.0.1:8000/
+python db.py --check; python xml_builder.py --check   # self-tests (need seeded databases)
 ```
+
+On this Windows machine the venv comes from Anaconda's Python 3.9, which needs its DLLs on PATH first:
+`$py="C:\Users\0rayc\anaconda3"; $env:PATH="$py;$py\Library\bin;$py\Scripts;$env:PATH"`, then use `venv\Scripts\python.exe`.
+`.env` uses `127.0.0.1` (not `localhost`) for Neo4j: it halves the time a search waits when Neo4j is down.
 
 ## Gotchas
 

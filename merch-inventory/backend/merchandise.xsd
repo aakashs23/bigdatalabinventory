@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  merchandise.xsd - the "rulebook" for the merged XML document.
+
+  xml_builder.py checks every merged document against these rules.
+  A <product> is built from TWO databases, so almost every part inside it is
+  optional (minOccurs="0"): if one database is down, the document is still
+  valid, it just has fewer parts.
+
+    From MongoDB: name, brand, price, tags, attributes, stock
+    From Neo4j:   category_path, related
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <!-- ===== Small reusable types ===== -->
+
+  <!-- A SKU looks like LIP-001: three capital letters, a dash, three digits. -->
+  <xs:simpleType name="SkuType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Z]{3}-[0-9]{3}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Stock status computed in db.py: OUT = none left, LOW = at/below reorder level. -->
+  <xs:simpleType name="StatusType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="OK"/>
+      <xs:enumeration value="LOW"/>
+      <xs:enumeration value="OUT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The two relationship types stored in Neo4j. -->
+  <xs:simpleType name="RelationType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="BOUGHT_TOGETHER"/>
+      <xs:enumeration value="SIMILAR_TO"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A price is a number that is not negative. -->
+  <xs:simpleType name="PriceValue">
+    <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="0"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- <price currency="INR">699</price> : a number with a "currency" attribute. -->
+  <xs:complexType name="PriceType">
+    <xs:simpleContent>
+      <xs:extension base="PriceValue">
+        <xs:attribute name="currency" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- <attribute name="shade">Pioneer</attribute> : the flexible MongoDB attributes.
+       Each product has different ones, so the NAME is data, not an element name. -->
+  <xs:complexType name="AttributeType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="name" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- <warehouse code="WH-MUM" city="Mumbai" quantity="140" reorder_level="20" status="OK"/> -->
+  <xs:complexType name="WarehouseType">
+    <xs:attribute name="code" type="xs:string" use="required"/>
+    <xs:attribute name="city" type="xs:string" use="required"/>
+    <xs:attribute name="quantity" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="reorder_level" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="status" type="StatusType" use="required"/>
+  </xs:complexType>
+
+  <!-- <stock total="200"> with zero or more <warehouse> inside (zero = no stock records). -->
+  <xs:complexType name="StockType">
+    <xs:sequence>
+      <xs:element name="warehouse" type="WarehouseType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="total" type="xs:nonNegativeInteger" use="required"/>
+  </xs:complexType>
+
+  <!-- <item sku="KAJ-001" type="BOUGHT_TOGETHER"/> : one related product. -->
+  <xs:complexType name="RelatedItemType">
+    <xs:attribute name="sku" type="SkuType" use="required"/>
+    <xs:attribute name="type" type="RelationType" use="required"/>
+  </xs:complexType>
+
+  <!-- ===== One product ===== -->
+  <!-- xs:sequence = the parts must appear in THIS order (xml_builder adds them in this order). -->
+  <xs:complexType name="ProductType">
+    <xs:sequence>
+      <!-- MongoDB "products" -->
+      <xs:element name="name" type="xs:string" minOccurs="0"/>
+      <xs:element name="brand" type="xs:string" minOccurs="0"/>
+      <xs:element name="price" type="PriceType" minOccurs="0"/>
+      <xs:element name="tags" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="tag" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="attributes" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="attribute" type="AttributeType" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <!-- MongoDB "inventory" -->
+      <xs:element name="stock" type="StockType" minOccurs="0"/>
+      <!-- Neo4j: Makeup > Lips > Lipstick (top of the tree first) -->
+      <xs:element name="category_path" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="category" type="xs:string" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <!-- Neo4j: BOUGHT_TOGETHER / SIMILAR_TO links -->
+      <xs:element name="related" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="item" type="RelatedItemType" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="sku" type="SkuType" use="required"/>
+  </xs:complexType>
+
+  <!-- ===== The whole document ===== -->
+  <xs:element name="merchandise">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="product" type="ProductType" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="query" type="xs:string" use="required"/>
+      <xs:attribute name="mode" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="sku"/>
+            <xs:enumeration value="category"/>
+            <xs:enumeration value="none"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="count" type="xs:nonNegativeInteger" use="required"/>
+    </xs:complexType>
+
+    <!-- No two <product> elements may have the same sku. -->
+    <xs:unique name="uniqueSku">
+      <xs:selector xpath="product"/>
+      <xs:field xpath="@sku"/>
+    </xs:unique>
+  </xs:element>
+
+</xs:schema>

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Merchandise Inventory</title>
+<style>
+  /* Colours are defined once here and reused everywhere (light + dark mode). */
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #dde1e8;
+    --accent: #c2185b;                       /* brand pink */
+    --mongo: #1b7f4b; --neo: #1f5fbf;        /* one colour per database */
+    --ok: #1b7f4b; --low: #9a5b00; --out: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --card: #1b2029; --text: #e8ebf1; --muted: #9aa3b5; --line: #2d3442;
+      --accent: #f06292; --mongo: #4cc38a; --neo: #6ea8ff;
+      --ok: #4cc38a; --low: #f0b44c; --out: #ff7b72;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+
+  /* search box */
+  form { display: flex; gap: 8px; }
+  input { flex: 1; min-width: 0; padding: 10px 12px; font: inherit; color: var(--text);
+          background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  button { padding: 10px 18px; font: inherit; font-weight: 600; color: #fff; cursor: pointer;
+           background: var(--accent); border: 0; border-radius: 8px; }
+  button:disabled { opacity: .6; cursor: wait; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .examples { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+              color: var(--muted); font-size: 13px; }
+
+  /* small clickable chips (examples, related products, categories) */
+  .chip { padding: 2px 10px; font: inherit; font-size: 13px; font-weight: 400; color: var(--text);
+          background: transparent; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* database status + validity badges */
+  .status { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+  .pill { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); }
+  .pill.mongo { color: var(--mongo); border-color: var(--mongo); }
+  .pill.neo { color: var(--neo); border-color: var(--neo); }
+  .pill.bad { color: var(--out); border-color: var(--out); }
+  .pill.good { color: var(--ok); border-color: var(--ok); }
+
+  /* warning banner when a database call failed */
+  .banner { margin-top: 16px; padding: 10px 14px; border: 1px solid var(--out); border-radius: 8px;
+            color: var(--out); background: var(--card); }
+
+  /* product cards */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+          padding: 16px; margin-top: 12px; }
+  .card h3 { margin: 0; font-size: 17px; }
+  .card .meta { color: var(--muted); margin: 2px 0 8px; }
+  .price { font-weight: 700; }
+  .crumbs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 6px 0; }
+  .crumbs .sep { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 10px; }
+  .label { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 4px; }
+  .label.mongo { color: var(--mongo); } .label.neo { color: var(--neo); }
+  .tag { display: inline-block; margin: 0 4px 4px 0; padding: 0 8px; font-size: 12px;
+         color: var(--muted); border: 1px solid var(--line); border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .OK { color: var(--ok); } .LOW { color: var(--low); } .OUT { color: var(--out); }
+  .st { font-weight: 700; }
+  .none { color: var(--muted); font-style: italic; }
+
+  /* XML tabs */
+  .tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .tab { background: var(--card); color: var(--text); border: 1px solid var(--line); font-weight: 400; padding: 4px 12px; }
+  .tab[aria-selected="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  pre { margin: 0; padding: 12px; overflow: auto; max-height: 420px; font-size: 13px;
+        background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  .tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Merchandise Categorization and Inventory</h1>
+  <p class="sub">Search a SKU (e.g. LIP-001) or a category (e.g. Makeup). Illustrative data, not affiliated with Nykaa.</p>
+
+  <form id="form">
+    <input id="q" type="search" placeholder="SKU or category" aria-label="SKU or category" autocomplete="off" autofocus>
+    <button id="go" type="submit">Search</button>
+  </form>
+  <div class="examples" id="examples">Try:</div>
+  <div class="status">
+    <span id="dbs" style="display:contents"></span>
+    <span id="validity" class="pill" hidden></span>
+  </div>
+
+  <div id="banner" class="banner" role="alert" hidden></div>
+  <div id="message" class="sub" style="margin-top:16px" aria-live="polite"></div>
+
+  <div id="results" hidden>
+    <h2 id="summary"></h2>
+    <div id="products"></div>
+
+    <h2>Query trace <span class="sub">(every database call, in order)</span></h2>
+    <div class="tablewrap"><table id="trace"></table></div>
+
+    <h2>XML <span class="sub">(built by the mediator)</span></h2>
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <pre id="xml" tabindex="0"></pre>
+  </div>
+</main>
+
+<script>
+// ---------------------------------------------------------------- helpers --
+// el(tag, className, text) makes an element. We always set text with
+// .textContent (never innerHTML), so data from the server can never inject HTML.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+// chip(text, search) makes a small button that runs a new search when clicked.
+function chip(text, term) {
+  const b = el("button", "chip", text);
+  b.type = "button";
+  b.addEventListener("click", () => runSearch(term));
+  return b;
+}
+
+const $ = (id) => document.getElementById(id);
+const input = $("q");
+
+// ------------------------------------------------------------ rendering --
+// The merged XML is a string. DOMParser turns it back into a tree we can read.
+function parseXml(text) {
+  return new DOMParser().parseFromString(text, "application/xml");
+}
+
+// One product card, built from one <product> element of the MERGED xml.
+function productCard(p) {
+  const text = (sel) => { const n = p.querySelector(sel); return n ? n.textContent : null; };
+  const card = el("div", "card");
+
+  // --- MongoDB part: name, brand, price ---
+  card.append(el("h3", "", text("name") || p.getAttribute("sku")));
+  const price = text("price");
+  const meta = el("div", "meta", p.getAttribute("sku") + (text("brand") ? " · " + text("brand") : ""));
+  if (price !== null) {
+    meta.append(" · ", el("span", "price", "₹" + Number(price).toLocaleString("en-IN")));
+  }
+  card.append(meta);
+
+  // --- Neo4j part: category path (each step is clickable) ---
+  const crumbs = el("div", "crumbs");
+  const cats = p.querySelectorAll("category_path > category");
+  if (cats.length === 0) {
+    crumbs.append(el("span", "none", "Category unavailable"));
+  }
+  cats.forEach((c, i) => {
+    if (i > 0) crumbs.append(el("span", "sep", "›"));
+    crumbs.append(chip(c.textContent, c.textContent));
+  });
+  card.append(crumbs);
+
+  const grid = el("div", "grid");
+
+  // --- MongoDB: attributes + tags ---
+  const left = el("div");
+  left.append(el("div", "label mongo", "Attributes (MongoDB)"));
+  const attrs = p.querySelectorAll("attributes > attribute");
+  if (attrs.length === 0) {
+    left.append(el("div", "none", "Not available"));
+  } else {
+    const t = el("table");
+    attrs.forEach((a) => {
+      const row = el("tr");
+      row.append(el("th", "", a.getAttribute("name").replace(/_/g, " ")), el("td", "", a.textContent));
+      t.append(row);
+    });
+    left.append(t);
+  }
+  const tags = el("div"); tags.style.marginTop = "8px";
+  p.querySelectorAll("tags > tag").forEach((t) => tags.append(el("span", "tag", t.textContent)));
+  left.append(tags);
+
+  // --- MongoDB: stock per warehouse ---
+  const mid = el("div");
+  mid.append(el("div", "label mongo", "Stock (MongoDB)"));
+  const stock = p.querySelector("stock");
+  const rows = p.querySelectorAll("stock > warehouse");
+  if (!stock) {
+    mid.append(el("div", "none", "Not available"));
+  } else if (rows.length === 0) {
+    mid.append(el("div", "none", "No stock records"));
+  } else {
+    const t = el("table");
+    const head = el("tr");
+    head.append(el("th", "", "Warehouse"), el("th", "num", "Qty"), el("th", "", "Status"));
+    t.append(head);
+    rows.forEach((w) => {
+      const status = w.getAttribute("status");
+      const row = el("tr");
+      row.append(el("td", "", w.getAttribute("city")),
+                 el("td", "num", w.getAttribute("quantity")),
+                 el("td", "st " + status, status));     // text + colour, not colour alone
+      t.append(row);
+    });
+    mid.append(t, el("div", "meta", "Total: " + stock.getAttribute("total")));
+  }
+
+  // --- Neo4j: related products ---
+  const right = el("div");
+  right.append(el("div", "label neo", "Related (Neo4j)"));
+  const items = p.querySelectorAll("related > item");
+  if (!p.querySelector("related")) {
+    right.append(el("div", "none", "Not available"));
+  } else if (items.length === 0) {
+    right.append(el("div", "none", "None"));
+  }
+  items.forEach((i) => {
+    const line = el("div");
+    line.append(chip(i.getAttribute("sku"), i.getAttribute("sku")), " ",
+                el("span", "meta", i.getAttribute("type").replace("_", " ").toLowerCase()));
+    right.append(line);
+  });
+
+  grid.append(left, mid, right);
+  card.append(grid);
+  return card;
+}
+
+function renderTrace(trace) {
+  const t = $("trace");
+  t.replaceChildren();
+  const head = el("tr");
+  ["#", "Database", "Purpose", "Rows", "ms"].forEach((h, i) =>
+    head.append(el("th", i >= 3 ? "num" : "", h)));
+  t.append(head);
+  trace.forEach((s) => {
+    const row = el("tr");
+    const db = el("td", "", s.database);
+    db.style.color = s.database === "mongodb" ? "var(--mongo)" : "var(--neo)";
+    const purpose = el("td", "", s.purpose);
+    if (s.error) purpose.append(el("div", "OUT", "Error: " + s.error));
+    row.append(el("td", "", s.step), db, purpose, el("td", "num", s.rows), el("td", "num", s.ms));
+    t.append(row);
+  });
+}
+
+let currentXml = {};                       // the 3 XML strings of the latest search
+function showXml(which) {
+  $("xml").textContent = currentXml[which];
+  document.querySelectorAll(".tab").forEach((b) =>
+    b.setAttribute("aria-selected", String(b.dataset.which === which)));
+}
+
+function render(data) {
+  $("message").textContent = "";
+  $("results").hidden = false;
+
+  // banner: did any database call fail? (the rest of the page still shows what we got)
+  const failed = data.trace.filter((s) => s.error);
+  $("banner").hidden = failed.length === 0;
+  $("banner").textContent = failed.map((s) => s.database + " failed (step " + s.step + "): " + s.error).join(" | ")
+    + " — showing the data from the other database only.";
+
+  // heading: what we searched and how it was understood
+  const what = { sku: "SKU", category: "category" }[data.mode];
+  $("summary").textContent = data.mode === "none"
+    ? "No SKU or category matches “" + data.query + "”"
+    : data.skus.length + " product" + (data.skus.length === 1 ? "" : "s") + " in " + what + " “" + data.query + "”";
+
+  // product cards come from the MERGED xml (so the page shows what the mediator built)
+  const box = $("products");
+  box.replaceChildren();
+  parseXml(data.merged_xml).querySelectorAll("merchandise > product")
+    .forEach((p) => box.append(productCard(p)));
+
+  renderTrace(data.trace);
+
+  currentXml = { merged: data.merged_xml, mongodb: data.mongodb_xml, neo4j: data.neo4j_xml };
+  showXml("merged");
+  const v = $("validity");
+  v.textContent = data.valid ? "XML valid against merchandise.xsd" : "XML INVALID: " + data.errors.join("; ");
+  v.className = "pill " + (data.valid ? "good" : "bad");
+  v.hidden = false;
+}
+
+// ---------------------------------------------------------------- search --
+async function runSearch(term) {
+  term = term.trim();
+  input.value = term;
+  if (!term) { $("message").textContent = "Type a SKU or a category first."; return; }
+  history.replaceState(null, "", "#q=" + encodeURIComponent(term));   // makes the URL shareable
+
+  $("go").disabled = true;
+  $("message").textContent = "Searching…";
+  try {
+    const response = await fetch("/api/search?q=" + encodeURIComponent(term));
+    if (!response.ok) throw new Error("server answered " + response.status);
+    render(await response.json());
+  } catch (error) {
+    $("results").hidden = true;
+    $("message").textContent = "Search failed: " + error.message;
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+// ----------------------------------------------------------------- setup --
+$("form").addEventListener("submit", (e) => { e.preventDefault(); runSearch(input.value); });
+
+["LIP-001", "Makeup", "Skin", "Lipstick", "OIL-001", "CMP-001"].forEach((s) => $("examples").append(chip(s, s)));
+
+[["merged", "Merged"], ["mongodb", "MongoDB piece"], ["neo4j", "Neo4j piece"]].forEach(([which, label]) => {
+  const b = el("button", "tab", label);
+  b.type = "button"; b.role = "tab"; b.dataset.which = which;
+  b.addEventListener("click", () => showXml(which));
+  $("tabs").append(b);
+});
+
+// Status pills: which databases are up, plus (after a search) whether the XML was valid.
+(async function showStatus() {
+  const box = $("dbs");
+  try {
+    const h = await (await fetch("/api/health")).json();
+    for (const [name, state] of Object.entries(h)) {
+      const up = state === "up";
+      box.append(el("span", "pill " + (up ? (name === "mongodb" ? "mongo" : "neo") : "bad"),
+                    name + ": " + (up ? "up" : "down")));
+    }
+  } catch (e) {
+    box.append(el("span", "pill bad", "server unreachable"));
+  }
+})();
+
+// Opening  /#q=LIP-001  searches straight away.
+const start = decodeURIComponent((location.hash.match(/^#q=(.*)$/) || [])[1] || "");
+if (start) runSearch(start);
+</script>
+</body>
+</html>
