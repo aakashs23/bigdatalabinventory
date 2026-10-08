@@ -1,0 +1,16 @@
+# Starts the two databases used by the project.
+# Docker Compose automatically reads the .env file in this folder,
+# so ${NEO4J_PASSWORD} below is replaced with the value from .env.
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "127.0.0.1:27017:27017"   # only reachable from this computer
+
+  neo4j:
+    image: neo4j:5
+    ports:
+      - "127.0.0.1:7474:7474"     # Neo4j Browser (web UI)
+      - "127.0.0.1:7687:7687"     # Bolt protocol (what Python connects to)
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
